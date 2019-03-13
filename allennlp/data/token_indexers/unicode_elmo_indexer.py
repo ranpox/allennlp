@@ -3,7 +3,7 @@ from allennlp.data.token_indexers.token_indexer import TokenIndexer
 from allennlp.data.token_indexers.elmo_indexer import _make_bos_eos, ELMoTokenCharactersIndexer
 
 
-class ELMoCharacterMapperV2(object):
+class UnicodeELMoCharacterMapper(object):
     max_word_length = 50
 
     oov_token = '<oov>'
@@ -72,7 +72,7 @@ class ELMoCharacterMapperV2(object):
 
 
 @TokenIndexer.register("elmo_characters_v2")
-class ELMoTokenCharactersIndexerV2(ELMoTokenCharactersIndexer):
+class UnicodeELMoTokenCharactersIndexer(ELMoTokenCharactersIndexer):
     """
     Convert a token to an array of character ids to compute ELMo representations.
 
@@ -88,5 +88,5 @@ class ELMoTokenCharactersIndexerV2(ELMoTokenCharactersIndexer):
     def __init__(self, char_vocab_file: str,
                  namespace: str = 'elmo_characters_v2',
                  tokens_to_add: Dict[str, int] = None) -> None:
-        super(ELMoTokenCharactersIndexerV2, self).__init__(namespace, tokens_to_add)
-        self._mapper = ELMoCharacterMapperV2(char_vocab_file, tokens_to_add)
+        super(UnicodeELMoTokenCharactersIndexer, self).__init__(namespace, tokens_to_add)
+        self._mapper = UnicodeELMoCharacterMapper(char_vocab_file, tokens_to_add)

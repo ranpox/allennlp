@@ -9,6 +9,6 @@ from allennlp.data.token_indexers.single_id_token_indexer import SingleIdTokenIn
 from allennlp.data.token_indexers.token_characters_indexer import TokenCharactersIndexer
 from allennlp.data.token_indexers.token_indexer import TokenIndexer
 from allennlp.data.token_indexers.elmo_indexer import ELMoTokenCharactersIndexer
-from allennlp.data.token_indexers.elmo_indexer_v2 import ELMoTokenCharactersIndexerV2
+from allennlp.data.token_indexers.unicode_elmo_indexer import UnicodeELMoTokenCharactersIndexer
 from allennlp.data.token_indexers.openai_transformer_byte_pair_indexer import OpenaiTransformerBytePairIndexer
 from allennlp.data.token_indexers.wordpiece_indexer import WordpieceIndexer, PretrainedBertIndexer

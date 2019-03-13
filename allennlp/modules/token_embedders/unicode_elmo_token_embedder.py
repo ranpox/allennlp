@@ -45,7 +45,7 @@ class _UnicodeElmoBilm(torch.nn.Module):
                     assert len(fields) == 2
                     token, i = fields
                     mapping[token] = int(i)
-            char_embedder = UnicodeBilmEmbeddings(dim, mapping)
+            char_embedder = UnicodeBilmEmbeddings(dim, mapping, requires_grad=requires_grad)
         else:
             char_embedder = None
 
@@ -55,14 +55,13 @@ class _UnicodeElmoBilm(torch.nn.Module):
             filters=c['filters'],
             n_highway=c['n_highway'],
             activation=c['activation'],
+            requires_grad=requires_grad
         )
         self._token_embedder.load_state_dict(
             torch.load(self._token_embedder_file,
                        map_location=lambda storage, loc: storage)
         )
 
-        for p in self._token_embedder.parameters():
-            p.require_grads = requires_grad
         self._word_embedding = None
         self._bos_embedding: torch.Tensor = None
         self._eos_embedding: torch.Tensor = None
@@ -76,7 +75,7 @@ class _UnicodeElmoBilm(torch.nn.Module):
             input_size=c['projection_dim'],
             hidden_size=c['projection_dim'],
             cell_size=c['dim'],
-            requires_grad=True,
+            requires_grad=requires_grad,
             num_layers=c['n_layers'],
             recurrent_dropout_probability=self._options['dropout'],
             memory_cell_clip_value=c['cell_clip'],
@@ -87,8 +86,6 @@ class _UnicodeElmoBilm(torch.nn.Module):
             torch.load(self._encoder_file,
                        map_location=lambda storage, loc: storage)
         )
-        for p in self._encoder.parameters():
-            p.require_grads = requires_grad
 
     def forward(self,
                 inputs: torch.Tensor,
@@ -263,7 +260,7 @@ class UnicodeElmoTokenEmbedder(TokenEmbedder):
 
     # Custom vocab_to_cache logic requires a from_params implementation.
     @classmethod
-    def from_params(cls, vocab: Vocabulary, params: Params) -> 'SelfAttentionLBLTokenEmbedder':  # type: ignore
+    def from_params(cls, vocab: Vocabulary, params: Params) -> 'UnicodeElmoTokenEmbedder':  # type: ignore
         # pylint: disable=arguments-differ
         params.add_file_to_archive('options_file')
         params.add_file_to_archive('encoder_file')

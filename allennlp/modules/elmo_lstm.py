@@ -62,8 +62,9 @@ class ElmoLstm(_EncoderBase):
                  requires_grad: bool = False,
                  recurrent_dropout_probability: float = 0.0,
                  memory_cell_clip_value: Optional[float] = None,
-                 state_projection_clip_value: Optional[float] = None) -> None:
-        super(ElmoLstm, self).__init__(stateful=True)
+                 state_projection_clip_value: Optional[float] = None,
+                 stateful: bool = True) -> None:
+        super(ElmoLstm, self).__init__(stateful=stateful)
 
         # Required to be wrapped with a :class:`PytorchSeq2SeqWrapper`.
         self.input_size = input_size
@@ -85,6 +86,11 @@ class ElmoLstm(_EncoderBase):
                                                    recurrent_dropout_probability,
                                                    memory_cell_clip_value,
                                                    state_projection_clip_value)
+            forward_layer.input_linearity.weight.requires_grad = requires_grad
+            forward_layer.state_linearity.weight.requires_grad = requires_grad
+            forward_layer.state_linearity.bias.requires_grad = requires_grad
+            forward_layer.state_projection.weight.requires_grad = requires_grad
+
             backward_layer = LstmCellWithProjection(lstm_input_size,
                                                     hidden_size,
                                                     cell_size,
@@ -92,6 +98,11 @@ class ElmoLstm(_EncoderBase):
                                                     recurrent_dropout_probability,
                                                     memory_cell_clip_value,
                                                     state_projection_clip_value)
+            backward_layer.input_linearity.weight.requires_grad = requires_grad
+            backward_layer.state_linearity.weight.requires_grad = requires_grad
+            backward_layer.state_linearity.bias.requires_grad = requires_grad
+            backward_layer.state_projection.weight.requires_grad = requires_grad
+
             lstm_input_size = hidden_size
 
             self.add_module('forward_layer_{}'.format(layer_index), forward_layer)
@@ -118,6 +129,9 @@ class ElmoLstm(_EncoderBase):
         A ``torch.Tensor`` of shape (num_layers, batch_size, sequence_length, hidden_size),
         where the num_layers dimension represents the LSTM output from that layer.
         """
+        if self.stateful and mask is None:
+            raise ValueError("Always pass a mask with stateful RNNs.")
+
         batch_size, total_sequence_length = mask.size()
         stacked_sequence_output, final_states, restoration_indices = \
             self.sort_and_run_forward(self._lstm_forward, inputs, mask)
@@ -132,12 +146,13 @@ class ElmoLstm(_EncoderBase):
             stacked_sequence_output = torch.cat([stacked_sequence_output, zeros], 1)
 
             # The states also need to have invalid rows added back.
-            new_states = []
-            for state in final_states:
-                state_dim = state.size(-1)
-                zeros = state.new_zeros(num_layers, batch_size - num_valid, state_dim)
-                new_states.append(torch.cat([state, zeros], 1))
-            final_states = new_states
+            if self.stateful:
+                new_states = []
+                for state in final_states:
+                    state_dim = state.size(-1)
+                    zeros = state.new_zeros(num_layers, batch_size - num_valid, state_dim)
+                    new_states.append(torch.cat([state, zeros], 1))
+                final_states = new_states
 
         # It's possible to need to pass sequences which are padded to longer than the
         # max length of the sequence to a Seq2StackEncoder. However, packing and unpacking
@@ -151,7 +166,8 @@ class ElmoLstm(_EncoderBase):
                                                       stacked_sequence_output[0].size(-1))
             stacked_sequence_output = torch.cat([stacked_sequence_output, zeros], 2)
 
-        self._update_states(final_states, restoration_indices)
+        if self.stateful:
+            self._update_states(final_states, restoration_indices)
 
         # Restore the original indices and return the sequence.
         # Has shape (num_layers, batch_size, sequence_length, hidden_size)

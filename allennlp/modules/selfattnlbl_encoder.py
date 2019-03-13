@@ -3,7 +3,8 @@ import torch
 import numpy as np
 import logging
 import json
-from allennlp.data.token_indexers.elmo_indexer_v2 import ELMoCharacterMapperV2
+from overrides import overrides
+from allennlp.data.token_indexers.unicode_elmo_indexer import UnicodeELMoCharacterMapper
 from allennlp.common.file_utils import cached_path
 from allennlp.nn.activations import Activation
 from allennlp.modules.highway import Highway
@@ -48,7 +49,8 @@ def attention_with_relative_position(query: torch.Tensor,
 class MultiHeadedAttentionWithRelativePosition(torch.nn.Module):
     def __init__(self, num_heads: int, input_dim: int, width: int,
                  left_to_right: bool,
-                 dropout: float = 0.1) -> None:
+                 dropout: float = 0.1,
+                 requires_grad: bool = False) -> None:
         super().__init__()
         assert input_dim % num_heads == 0, "input_dim must be a multiple of num_heads"
         # We assume d_v always equals d_k
@@ -59,7 +61,11 @@ class MultiHeadedAttentionWithRelativePosition(torch.nn.Module):
         # These linear layers are
         #  [query_projection, key_projection, value_projection, concatenated_heads_projection]
         self.linears = clone(torch.nn.Linear(input_dim, input_dim), 4)
+        for k in range(4):
+            self.linears[k].weight.requires_grad = requires_grad
+            self.linears[k].bias.requires_grad = requires_grad
         self.rel_pos_score = torch.nn.Parameter(torch.randn(num_heads, width + 1))
+        self.rel_pos_score.requires_grad = requires_grad
         self.dropout = torch.nn.Dropout(p=dropout)
 
     def forward(self,
@@ -109,7 +115,8 @@ class _SelfAttentiveLBLEncoder(torch.nn.Module):
                  n_highway: int,
                  use_position: bool = False,
                  use_relative_position: bool = False,
-                 dropout: float = 0.0):
+                 dropout: float = 0.0,
+                 requires_grad: bool = False):
         super(_SelfAttentiveLBLEncoder, self).__init__()
         self.use_position = use_position
         self.use_relative_position_weights = use_relative_position
@@ -126,17 +133,35 @@ class _SelfAttentiveLBLEncoder(torch.nn.Module):
         for _ in range(n_layers):
             if self.use_relative_position_weights:
                 forward_attn = MultiHeadedAttentionWithRelativePosition(n_heads, hidden_size, width=width + 1,
-                                                                        left_to_right=True, dropout=dropout)
+                                                                        left_to_right=True, dropout=dropout,
+                                                                        requires_grad=requires_grad)
                 backward_attn = MultiHeadedAttentionWithRelativePosition(n_heads, hidden_size, width=width + 1,
-                                                                         left_to_right=False, dropout=dropout)
+                                                                         left_to_right=False, dropout=dropout,
+                                                                         requires_grad=requires_grad)
             else:
                 forward_attn = MultiHeadedAttention(n_heads, hidden_size, dropout)
                 backward_attn = MultiHeadedAttention(n_heads, hidden_size, dropout)
+                for k in range(4):
+                    forward_attn.linears[k].weight.requires_grad = requires_grad
+                    forward_attn.linears[k].bias.requires_grad = requires_grad
+                    backward_attn.linears[k].weight.requires_grad = requires_grad
+                    backward_attn.linears[k].bias.requires_grad = requires_grad
 
             forward_attns.append(forward_attn)
             backward_attns.append(backward_attn)
-            forward_blocks.append(Highway(hidden_size, n_highway))
-            backward_blocks.append(Highway(hidden_size, n_highway))
+
+            forward_block = Highway(hidden_size, n_highway)
+            for layer in forward_block._layers:
+                layer.weight.requires_grad = requires_grad
+                layer.bias.requires_grad = requires_grad
+
+            backward_block = Highway(hidden_size, n_highway)
+            for layer in backward_block._layers:
+                layer.weight.requires_grad = requires_grad
+                layer.bias.requires_grad = requires_grad
+
+            forward_blocks.append(forward_block)
+            backward_blocks.append(backward_block)
 
         self.forward_attns = torch.nn.ModuleList(forward_attns)
         self.backward_attns = torch.nn.ModuleList(backward_attns)
@@ -193,17 +218,18 @@ class UnicodeBilmEmbeddings(torch.nn.Module):
     def __init__(self,
                  n_d: int,
                  word2id: Dict[str, int],
+                 requires_grad: bool,
                  input_field_name: str = None):
         super(UnicodeBilmEmbeddings, self).__init__()
         self.input_field_name = input_field_name
+        self.requires_grad = requires_grad
         self.word2id = word2id
         self.id2word = {i: word for word, i in word2id.items()}
         self.n_V, self.n_d = len(word2id), n_d
-        self.oovid = word2id[ELMoCharacterMapperV2.oov_token]
-        self.padid = word2id[ELMoCharacterMapperV2.pad_token]
+        self.oovid = word2id[UnicodeELMoCharacterMapper.oov_token]
+        self.padid = word2id[UnicodeELMoCharacterMapper.pad_token]
         self.embedding = torch.nn.Embedding(self.n_V, n_d, padding_idx=self.padid)
-        scale = np.sqrt(3.0 / n_d)
-        self.embedding.weight.data.uniform_(-scale, scale)
+        self.embedding.weight.requires_grad = requires_grad
 
     def forward(self, input_):
         return self.embedding(input_)
@@ -218,16 +244,17 @@ class UnicodeBilmCharacterEncoder(torch.nn.Module):
                  char_embedder: UnicodeBilmEmbeddings,
                  filters: List[Tuple[int, int]],
                  n_highway: int,
-                 activation: str):
+                 activation: str,
+                 requires_grad: bool):
         super(UnicodeBilmCharacterEncoder, self).__init__()
 
         self.output_dim = output_dim
         self.char_embedder = char_embedder
         self._beginning_of_sentence_characters = torch.from_numpy(
-            np.array(char_embedder.word2id.get(ELMoCharacterMapperV2.bos_token))
+            np.array(char_embedder.word2id.get(UnicodeELMoCharacterMapper.bos_token))
         )
         self._end_of_sentence_characters = torch.from_numpy(
-            np.array(char_embedder.word2id.get(ELMoCharacterMapperV2.eos_token))
+            np.array(char_embedder.word2id.get(UnicodeELMoCharacterMapper.eos_token))
         )
 
         self.emb_dim = 0
@@ -241,6 +268,8 @@ class UnicodeBilmCharacterEncoder(torch.nn.Module):
                                    out_channels=num,
                                    kernel_size=width,
                                    bias=True)
+            conv.weight.requires_grad = requires_grad
+            conv.bias.requires_grad = requires_grad
             self.convolutions.append(conv)
 
         self.convolutions = torch.nn.ModuleList(self.convolutions)
@@ -249,11 +278,20 @@ class UnicodeBilmCharacterEncoder(torch.nn.Module):
         self.n_highway = n_highway
 
         self.highways = Highway(self.n_filters, self.n_highway, activation=Activation.by_name("relu")())
+        for layer in self.highways._layers:
+            layer.weight.requires_grad = requires_grad
+            layer.bias.requires_grad = requires_grad
         self.emb_dim += self.n_filters
         self.activation = Activation.by_name(activation)()
 
         self.projection = torch.nn.Linear(self.emb_dim, self.output_dim, bias=True)
+        self.projection.weight.requires_grad = requires_grad
+        self.projection.bias.requires_grad = requires_grad
 
+    def get_output_dim(self):
+        return self.output_dim
+
+    @overrides
     def forward(self, inputs: torch.Tensor):
         # NOTE: by default, 0 is for padding.
         mask = ((inputs != self.char_embedder.padid).long().sum(dim=-1) > 0).long()
@@ -318,7 +356,7 @@ class _SelfAttentiveLBLBiLm(torch.nn.Module):
                     assert len(fields) == 2
                     token, i = fields
                     mapping[token] = int(i)
-            char_embedder = UnicodeBilmEmbeddings(dim, mapping)
+            char_embedder = UnicodeBilmEmbeddings(dim, mapping, requires_grad=requires_grad)
         else:
             char_embedder = None
 
@@ -328,13 +366,12 @@ class _SelfAttentiveLBLBiLm(torch.nn.Module):
             filters=c['filters'],
             n_highway=c['n_highway'],
             activation=c['activation'],
+            requires_grad=requires_grad
         )
         self._token_embedder.load_state_dict(
             torch.load(self._token_embedder_file,
                        map_location=lambda storage, loc: storage)
         )
-        for p in self._token_embedder.parameters():
-            p.require_grads = requires_grad
         self._word_embedding = None
         self._bos_embedding: torch.Tensor = None
         self._eos_embedding: torch.Tensor = None
@@ -353,14 +390,13 @@ class _SelfAttentiveLBLBiLm(torch.nn.Module):
             n_highway=c['n_highway'],
             use_position=c.get('position', False),
             use_relative_position=c.get('relative_position_weights', False),
-            dropout=self._options['dropout']
+            dropout=self._options['dropout'],
+            requires_grad=requires_grad
         )
         self._encoder.load_state_dict(
             torch.load(self._encoder_file,
                        map_location=lambda storage, loc: storage)
         )
-        for p in self._encoder.parameters():
-            p.require_grads = requires_grad
 
     def forward(self,
                 inputs: torch.Tensor,
