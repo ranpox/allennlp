@@ -189,12 +189,12 @@ class _SelfAttentiveLBLEncoder(torch.nn.Module):
         return torch.stack(sequence_outputs, dim=0)
 
 
-class _SelfAttentiveLBLEmbeddings(torch.nn.Module):
+class UnicodeBilmEmbeddings(torch.nn.Module):
     def __init__(self,
                  n_d: int,
                  word2id: Dict[str, int],
                  input_field_name: str = None):
-        super(_SelfAttentiveLBLEmbeddings, self).__init__()
+        super(UnicodeBilmEmbeddings, self).__init__()
         self.input_field_name = input_field_name
         self.word2id = word2id
         self.id2word = {i: word for word, i in word2id.items()}
@@ -212,14 +212,14 @@ class _SelfAttentiveLBLEmbeddings(torch.nn.Module):
         return self.n_d
 
 
-class _SelfAttentiveLBLCharacterEncoder(torch.nn.Module):
+class UnicodeBilmCharacterEncoder(torch.nn.Module):
     def __init__(self,
                  output_dim: int,
-                 char_embedder: _SelfAttentiveLBLEmbeddings,
+                 char_embedder: UnicodeBilmEmbeddings,
                  filters: List[Tuple[int, int]],
                  n_highway: int,
                  activation: str):
-        super(_SelfAttentiveLBLCharacterEncoder, self).__init__()
+        super(UnicodeBilmCharacterEncoder, self).__init__()
 
         self.output_dim = output_dim
         self.char_embedder = char_embedder
@@ -318,11 +318,11 @@ class _SelfAttentiveLBLBiLm(torch.nn.Module):
                     assert len(fields) == 2
                     token, i = fields
                     mapping[token] = int(i)
-            char_embedder = _SelfAttentiveLBLEmbeddings(dim, mapping)
+            char_embedder = UnicodeBilmEmbeddings(dim, mapping)
         else:
             char_embedder = None
 
-        self._token_embedder = _SelfAttentiveLBLCharacterEncoder(
+        self._token_embedder = UnicodeBilmCharacterEncoder(
             output_dim=self._options['encoder']['projection_dim'],
             char_embedder=char_embedder,
             filters=c['filters'],

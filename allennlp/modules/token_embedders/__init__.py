@@ -15,3 +15,4 @@ from allennlp.modules.token_embedders.language_model_token_embedder import \
         LanguageModelTokenEmbedder
 from allennlp.modules.token_embedders.bag_of_word_counts_token_embedder import BagOfWordCountsTokenEmbedder
 from allennlp.modules.token_embedders.selfattnlbl_token_embedder import SelfAttentionLBLTokenEmbedder
+from allennlp.modules.token_embedders.unicode_elmo_token_embedder import UnicodeElmoTokenEmbedder

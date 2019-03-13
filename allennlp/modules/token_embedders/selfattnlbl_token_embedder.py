@@ -65,11 +65,12 @@ class SelfAttentionLBLTokenEmbedder(TokenEmbedder):
         params.add_file_to_archive('options_file')
         params.add_file_to_archive('encoder_file')
         params.add_file_to_archive('token_embedder_file')
+        params.add_file_to_archive('char_vocab_file')
 
         options_file = params.pop('options_file')
         encoder_file = params.pop('encoder_file')
         token_embedder_file = params.pop('token_embedder_file')
-        char_vocab_file = params.pop('char_vocab_file', None)
+        char_vocab_file = params.pop('char_vocab_file')
 
         requires_grad = params.pop('requires_grad', False)
         do_layer_norm = params.pop_bool('do_layer_norm', False)
