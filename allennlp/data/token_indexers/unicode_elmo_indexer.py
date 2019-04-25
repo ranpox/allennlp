@@ -59,6 +59,7 @@ class UnicodeELMoCharacterMapper(object):
         elif word == self.eos_token:
             char_ids = self.end_of_sentence_characters
         else:
+            word = word[:self.max_word_length - 2]
             char_ids = [self.padding_character] * self.max_word_length
             char_ids[0] = self.beginning_of_word_character
             for k, chr_id in enumerate(word, start=1):
